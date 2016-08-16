@@ -6,8 +6,6 @@
 #include "helper/binarybuffer.h"
 #include <target/cortex_m.h>
 
-#include "pac5223.h"
-
 // Base registers
 #define PAC5XXX_FLASH_BASE                     		(0x00000000UL)
 
@@ -48,7 +46,6 @@ static inline int pac5223_get_flash_status(struct flash_bank *bank, uint32_t *st
 
 static int pac5223_wait_status_busy( struct flash_bank *bank, int timeout )
 {
-	struct target *target = bank->target;
 	uint32_t status;
 	int retval = ERROR_OK;
 
@@ -82,6 +79,7 @@ static int pac5223_erase(struct flash_bank *bank, int first, int last)
 {
 	struct target *target = bank->target;
 	int i;
+	int retval = ERROR_OK;
 
 	// Make sure target is halted
 	if (bank->target->state != TARGET_HALTED) 
@@ -94,7 +92,7 @@ static int pac5223_erase(struct flash_bank *bank, int first, int last)
 	for( i = first; i <= last; ++i ) 
 	{
 		// Unlock flash write
-		retval = target_write_u32( target, PAC5XXX_MEMCTL_FLASHLOCK_LOCK, PAC5XXX_FLASH_LOCK_FLASHWRITE_KEY );
+		retval = target_write_u32( target, PAC5XXX_MEMCTL_FLASHLOCK, PAC5XXX_FLASH_LOCK_FLASHWRITE_KEY );
 		if (retval != ERROR_OK)
 			return retval;
 
@@ -121,9 +119,6 @@ static int pac5223_erase(struct flash_bank *bank, int first, int last)
 
 static int pac5223_protect(struct flash_bank *bank, int set, int first, int last)
 {
-	struct pac5223_flash_bank *pac5223_info = NULL;
-	struct target *target = bank->target;
-
 	LOG_DEBUG("PROTECT NOT YET IMPLEMENTED");
 
 	return ERROR_OK;
@@ -168,7 +163,7 @@ static int pac5223_write(struct flash_bank *bank, const uint8_t *buffer, uint32_
 
 	uint32_t words_remaining = count / 2;
 
-	int retval;
+	int retval = ERROR_OK;
 
 	// Write each word
 	while( words_remaining > 0 ) 
@@ -179,7 +174,7 @@ static int pac5223_write(struct flash_bank *bank, const uint8_t *buffer, uint32_
 		memcpy( &value, buffer, sizeof(uint16_t) );
 
 		// Write the flashlock key to allow writes
-		retval = target_write_u32( target, PAC5XXX_MEMCTL_FLASHLOCK_LOCK, PAC5XXX_FLASH_LOCK_FLASHWRITE_KEY );
+		retval = target_write_u32( target, PAC5XXX_MEMCTL_FLASHLOCK, PAC5XXX_FLASH_LOCK_FLASHWRITE_KEY );
 		if (retval != ERROR_OK)
 			break;
 
@@ -211,10 +206,6 @@ static int pac5223_probe( struct flash_bank *bank )
 	struct pac5223_flash_bank *pac5223_info = bank->driver_priv;
 
 	int i;
-
-	uint16_t flash_size_in_kb;
-	uint16_t max_flash_size_in_kb;
-	uint32_t device_id;
 
 	// Set base flash address
 	uint32_t base_address 		= PAC5XXX_FLASH_BASE;
@@ -272,8 +263,6 @@ static int pac5223_auto_probe(struct flash_bank *bank)
 
 static int pac5223_protect_check(struct flash_bank *bank)
 {
-	struct pac5223_flash_bank *pac5223_info = bank->driver_priv;
-
 	// TODO: Read write protection status of all sectors
 	LOG_DEBUG("PROTECT_CHECK NOT YET IMPLEMENTED");
 
@@ -309,7 +298,7 @@ static const struct command_registration pac5223_exec_command_handlers[] =
 		.mode = COMMAND_EXEC,
 		.usage = "N/A",
 		.help = "Get chip info"
-	}
+	},
 	COMMAND_REGISTRATION_DONE
 };
 

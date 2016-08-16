@@ -39,6 +39,7 @@ NOR_DRIVERS = \
 	nrf51.c \
 	numicro.c \
 	ocl.c \
+	pac5223.c \
 	pic32mx.c \
 	psoc4.c \
 	sim3x.c \
