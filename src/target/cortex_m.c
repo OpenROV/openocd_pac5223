@@ -1083,18 +1083,19 @@ static int cortex_m_assert_reset(struct target *target)
 		if (retval3 != ERROR_OK)
 			LOG_DEBUG("Ignoring AP write error right after reset");
 
-		retval3 = dap_dp_init(armv7m->debug_ap->dap);
-		if (retval3 != ERROR_OK)
-			LOG_ERROR("DP initialisation failed");
+		// Openrov test - commented out because colinkex doesnt do this
+		// retval3 = dap_dp_init(armv7m->debug_ap->dap);
+		// if (retval3 != ERROR_OK)
+		// 	LOG_ERROR("DP initialisation failed");
 
-		else {
-			/* I do not know why this is necessary, but it
-			 * fixes strange effects (step/resume cause NMI
-			 * after reset) on LM3S6918 -- Michael Schwingen
-			 */
-			uint32_t tmp;
-			mem_ap_read_atomic_u32(armv7m->debug_ap, NVIC_AIRCR, &tmp);
-		}
+		// else {
+		// 	/* I do not know why this is necessary, but it
+		// 	 * fixes strange effects (step/resume cause NMI
+		// 	 * after reset) on LM3S6918 -- Michael Schwingen
+		// 	 */
+		// 	uint32_t tmp;
+		// 	mem_ap_read_atomic_u32(armv7m->debug_ap, NVIC_AIRCR, &tmp);
+		// }
 	}
 
 	target->state = TARGET_RESET;
