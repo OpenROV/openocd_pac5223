@@ -961,13 +961,14 @@ static int cortex_m_assert_reset(struct target *target)
 	struct armv7m_common *armv7m = &cortex_m->armv7m;
 	enum cortex_m_soft_reset_config reset_config = cortex_m->soft_reset_config;
 
-	LOG_DEBUG("target->state: %s",
-		target_state_name(target));
+	LOG_DEBUG("target->state: %s", target_state_name(target));
 
 	enum reset_types jtag_reset_config = jtag_get_reset_config();
 
 	if (target_has_event_action(target, TARGET_EVENT_RESET_ASSERT)) {
 		/* allow scripts to override the reset event */
+
+		LOG_DEBUG("Allowing script to handle reset event");
 
 		target_handle_event(target, TARGET_EVENT_RESET_ASSERT);
 		register_cache_invalidate(cortex_m->armv7m.arm.core_cache);
@@ -983,6 +984,7 @@ static int cortex_m_assert_reset(struct target *target)
 
 	if ((jtag_reset_config & RESET_HAS_SRST) &&
 	    (jtag_reset_config & RESET_SRST_NO_GATING)) {
+		LOG_DEBUG("Asserting hardware reset");
 		adapter_assert_reset();
 		srst_asserted = true;
 	}
@@ -1000,21 +1002,34 @@ static int cortex_m_assert_reset(struct target *target)
 	if (retval == ERROR_OK && (cortex_m->dcb_dhcsr & S_SLEEP))
 		retval = mem_ap_write_u32(armv7m->debug_ap, DCB_DHCSR, DBGKEY | C_HALT | C_DEBUGEN);
 
+	/* Why does this happen... */
 	mem_ap_write_u32(armv7m->debug_ap, DCB_DCRDR, 0);
+
 	/* Ignore less important errors */
 
-	if (!target->reset_halt) {
+	if (!target->reset_halt) 
+	{
+		LOG_DEBUG("No halt requested after reset");
+
 		/* Set/Clear C_MASKINTS in a separate operation */
 		if (cortex_m->dcb_dhcsr & C_MASKINTS)
-			mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DHCSR,
-					DBGKEY | C_DEBUGEN | C_HALT);
+		{
+			mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DHCSR, DBGKEY | C_DEBUGEN | C_HALT);
+		}
 
 		/* clear any debug flags before resuming */
 		cortex_m_clear_halt(target);
 
 		/* clear C_HALT in dhcsr reg */
 		cortex_m_write_debug_halt_mask(target, 0, C_HALT);
-	} else {
+	} 
+	else 
+	{
+		LOG_DEBUG("Reset_halt requested");
+
+		// Openrov test - Issue C_HALT before doing reset
+		mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DHCSR, DBGKEY | C_DEBUGEN | C_HALT);
+
 		/* Halt in debug on reset; endreset_event() restores DEMCR.
 		 *
 		 * REVISIT catching BUSERR presumably helps to defend against
@@ -1022,27 +1037,35 @@ static int cortex_m_assert_reset(struct target *target)
 		 * other flags too?
 		 */
 		int retval2;
-		retval2 = mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DEMCR,
-				TRCENA | VC_HARDERR | VC_BUSERR | VC_CORERESET);
+		// retval2 = mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DEMCR, TRCENA | VC_HARDERR | VC_BUSERR | VC_CORERESET);
+		// Openrov test - Set interr, dont use harderr and buserr
+		retval2 = mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DEMCR, TRCENA | VC_INTERR | VC_CORERESET);
+
 		if (retval != ERROR_OK || retval2 != ERROR_OK)
+		{
 			LOG_INFO("AP write error, reset will not halt");
+		}
 	}
 
-	if (jtag_reset_config & RESET_HAS_SRST) {
+	if (jtag_reset_config & RESET_HAS_SRST) 
+	{
 		/* default to asserting srst */
 		if (!srst_asserted)
+		{
 			adapter_assert_reset();
+		}
 
 		/* srst is asserted, ignore AP access errors */
 		retval = ERROR_OK;
-	} else {
+	} 
+	else 
+	{
 		/* Use a standard Cortex-M3 software reset mechanism.
 		 * We default to using VECRESET as it is supported on all current cores.
 		 * This has the disadvantage of not resetting the peripherals, so a
 		 * reset-init event handler is needed to perform any peripheral resets.
 		 */
-		LOG_DEBUG("Using Cortex-M %s", (reset_config == CORTEX_M_RESET_SYSRESETREQ)
-			? "SYSRESETREQ" : "VECTRESET");
+		LOG_DEBUG("Using Cortex-M %s", (reset_config == CORTEX_M_RESET_SYSRESETREQ)	? "SYSRESETREQ" : "VECTRESET");
 
 		if (reset_config == CORTEX_M_RESET_VECTRESET) {
 			LOG_WARNING("Only resetting the Cortex-M core, use a reset-init event "
@@ -1050,9 +1073,13 @@ static int cortex_m_assert_reset(struct target *target)
 		}
 
 		int retval3;
-		retval3 = mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,
-				AIRCR_VECTKEY | ((reset_config == CORTEX_M_RESET_SYSRESETREQ)
-				? AIRCR_SYSRESETREQ : AIRCR_VECTRESET));
+		// retval3 = mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,
+		// 		AIRCR_VECTKEY | ((reset_config == CORTEX_M_RESET_SYSRESETREQ)
+		// 		? AIRCR_SYSRESETREQ : AIRCR_VECTRESET));
+
+		// Openrov test
+		retval3 = mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,	AIRCR_VECTKEY | AIRCR_SYSRESETREQ | AIRCR_VECTCLRACTIVE );
+
 		if (retval3 != ERROR_OK)
 			LOG_DEBUG("Ignoring AP write error right after reset");
 
@@ -1079,7 +1106,10 @@ static int cortex_m_assert_reset(struct target *target)
 	if (retval != ERROR_OK)
 		return retval;
 
-	if (target->reset_halt) {
+	if (target->reset_halt) 
+	{
+		LOG_DEBUG("Waiting for target halt");
+
 		retval = target_halt(target);
 		if (retval != ERROR_OK)
 			return retval;
