@@ -1051,7 +1051,7 @@ static int cortex_m_assert_reset(struct target *target)
 
 		int retval3;
 		retval3 = mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,
-				AIRCR_VECTKEY | AIRCR_VECTCLRACTIVE | ((reset_config == CORTEX_M_RESET_SYSRESETREQ)
+				AIRCR_VECTKEY | ((reset_config == CORTEX_M_RESET_SYSRESETREQ)
 				? AIRCR_SYSRESETREQ : AIRCR_VECTRESET));
 		if (retval3 != ERROR_OK)
 			LOG_DEBUG("Ignoring AP write error right after reset");
