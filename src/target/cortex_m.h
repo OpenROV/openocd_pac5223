@@ -154,6 +154,11 @@ enum cortex_m_soft_reset_config {
 	CORTEX_M_RESET_VECTRESET,
 };
 
+enum cortex_m_pac_config {
+	CORTEX_M_ISPAC,
+	CORTEX_M_NOTPAC
+}
+
 enum cortex_m_isrmasking_mode {
 	CORTEX_M_ISRMASK_AUTO,
 	CORTEX_M_ISRMASK_OFF,
@@ -184,6 +189,7 @@ struct cortex_m_common {
 	struct reg_cache *dwt_cache;
 
 	enum cortex_m_soft_reset_config soft_reset_config;
+	enum cortex_m_pac_config pac_config;
 
 	enum cortex_m_isrmasking_mode isrmasking_mode;
 

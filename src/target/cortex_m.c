@@ -960,6 +960,7 @@ static int cortex_m_assert_reset(struct target *target)
 	struct cortex_m_common *cortex_m = target_to_cm(target);
 	struct armv7m_common *armv7m = &cortex_m->armv7m;
 	enum cortex_m_soft_reset_config reset_config = cortex_m->soft_reset_config;
+	enum cortex_m_pac_config pac_config = cortex_m->pac_config;
 
 	LOG_DEBUG("target->state: %s", target_state_name(target));
 
@@ -1027,8 +1028,11 @@ static int cortex_m_assert_reset(struct target *target)
 	{
 		LOG_DEBUG("Reset_halt requested");
 
-		// Openrov test - Issue C_HALT before doing reset
-		mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DHCSR, DBGKEY | C_DEBUGEN | C_HALT);
+		if( pac_config == CORTEX_M_ISPAC )
+		{
+			// Openrov test - Issue C_HALT before doing reset
+			mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DHCSR, DBGKEY | C_DEBUGEN | C_HALT);
+		}
 
 		/* Halt in debug on reset; endreset_event() restores DEMCR.
 		 *
@@ -1037,9 +1041,17 @@ static int cortex_m_assert_reset(struct target *target)
 		 * other flags too?
 		 */
 		int retval2;
-		// retval2 = mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DEMCR, TRCENA | VC_HARDERR | VC_BUSERR | VC_CORERESET);
-		// Openrov test - Set interr, dont use harderr and buserr
-		retval2 = mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DEMCR, TRCENA | VC_HARDERR | VC_CORERESET);
+		
+		if( pac_config == CORTEX_M_ISPAC )
+		{
+			// Openrov test - Set interr, dont use harderr and buserr
+			retval2 = mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DEMCR, TRCENA | VC_HARDERR | VC_CORERESET);
+		}
+		else
+		{
+			retval2 = mem_ap_write_atomic_u32(armv7m->debug_ap, DCB_DEMCR, TRCENA | VC_HARDERR | VC_BUSERR | VC_CORERESET);
+		
+		}
 
 		if (retval != ERROR_OK || retval2 != ERROR_OK)
 		{
@@ -1073,29 +1085,42 @@ static int cortex_m_assert_reset(struct target *target)
 		}
 
 		int retval3;
-		// retval3 = mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,
-		// 		AIRCR_VECTKEY | ((reset_config == CORTEX_M_RESET_SYSRESETREQ)
-		// 		? AIRCR_SYSRESETREQ : AIRCR_VECTRESET));
+		
 
-		// Openrov test
-		retval3 = mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,	AIRCR_VECTKEY | AIRCR_SYSRESETREQ | AIRCR_VECTCLRACTIVE );
+		if( pac_config == CORTEX_M_ISPAC )
+		{
+			// Openrov test
+			retval3 = mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,	AIRCR_VECTKEY | AIRCR_SYSRESETREQ | AIRCR_VECTCLRACTIVE );
+		}
+		else
+		{
+			retval3 = mem_ap_write_atomic_u32(armv7m->debug_ap, NVIC_AIRCR,
+				AIRCR_VECTKEY | ((reset_config == CORTEX_M_RESET_SYSRESETREQ)
+				? AIRCR_SYSRESETREQ : AIRCR_VECTRESET));
+		}
 
 		if (retval3 != ERROR_OK)
 			LOG_DEBUG("Ignoring AP write error right after reset");
 
-		// Openrov test - commented out because colinkex doesnt do this
-		// retval3 = dap_dp_init(armv7m->debug_ap->dap);
-		// if (retval3 != ERROR_OK)
-		// 	LOG_ERROR("DP initialisation failed");
+		if( pac_config == CORTEX_M_ISPAC )
+		{
+			// Openrov test - commented out because colinkex doesnt do this
+		}
+		else
+		{
+			retval3 = dap_dp_init(armv7m->debug_ap->dap);
+			if (retval3 != ERROR_OK)
+				LOG_ERROR("DP initialisation failed");
 
-		// else {
-		// 	/* I do not know why this is necessary, but it
-		// 	 * fixes strange effects (step/resume cause NMI
-		// 	 * after reset) on LM3S6918 -- Michael Schwingen
-		// 	 */
-		// 	uint32_t tmp;
-		// 	mem_ap_read_atomic_u32(armv7m->debug_ap, NVIC_AIRCR, &tmp);
-		// }
+			else {
+				/* I do not know why this is necessary, but it
+				 * fixes strange effects (step/resume cause NMI
+				 * after reset) on LM3S6918 -- Michael Schwingen
+				 */
+				uint32_t tmp;
+				mem_ap_read_atomic_u32(armv7m->debug_ap, NVIC_AIRCR, &tmp);
+			}
+		}		
 	}
 
 	target->state = TARGET_RESET;
@@ -2168,6 +2193,7 @@ static int cortex_m_init_arch_info(struct target *target,
 	/* default reset mode is to use srst if fitted
 	 * if not it will use CORTEX_M3_RESET_VECTRESET */
 	cortex_m->soft_reset_config = CORTEX_M_RESET_VECTRESET;
+	cortex_m->pac_config = CORTEX_M_NOTPAC;
 
 	armv7m->arm.dap = tap->dap;
 
@@ -2378,6 +2404,50 @@ COMMAND_HANDLER(handle_cortex_m_reset_config_command)
 	return ERROR_OK;
 }
 
+COMMAND_HANDLER(handle_cortex_m_pac_config_command)
+{
+	struct target *target = get_current_target(CMD_CTX);
+	struct cortex_m_common *cortex_m = target_to_cm(target);
+	int retval;
+	char *pac_config;
+
+	retval = cortex_m_verify_pointer(CMD_CTX, cortex_m);
+
+	if (retval != ERROR_OK)
+		return retval;
+
+	if (CMD_ARGC > 0) 
+	{
+		if (strcmp(*CMD_ARGV, "true") == 0)
+		{
+			cortex_m->pac_config = CORTEX_M_ISPAC;
+		}
+		else
+		{
+			cortex_m->pac_config = CORTEX_M_NOTPAC;
+		}
+	}
+
+	switch (cortex_m->pac_config) 
+	{
+		case CORTEX_M_ISPAC:
+			pac_config = "is_pac";
+			break;
+
+		case CORTEX_M_NOTPAC:
+			pac_config = "not_pac";
+			break;
+
+		default:
+			pac_config = "unknown";
+			break;
+	}
+
+	command_print(CMD_CTX, "cortex_m pac_config %s", pac_config);
+
+	return ERROR_OK;
+}
+
 static const struct command_registration cortex_m_exec_command_handlers[] = {
 	{
 		.name = "maskisr",
@@ -2399,6 +2469,13 @@ static const struct command_registration cortex_m_exec_command_handlers[] = {
 		.mode = COMMAND_ANY,
 		.help = "configure software reset handling",
 		.usage = "['srst'|'sysresetreq'|'vectreset']",
+	},
+	{
+		.name = "pac_config",
+		.handler = handle_cortex_m_pac_config_command,
+		.mode = COMMAND_ANY,
+		.help = "Configure reset process to be tailored to PAC5xxx chips",
+		.usage = "['true'|'false']",
 	},
 	COMMAND_REGISTRATION_DONE
 };
