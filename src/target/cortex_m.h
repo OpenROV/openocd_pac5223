@@ -157,7 +157,7 @@ enum cortex_m_soft_reset_config {
 enum cortex_m_pac_config {
 	CORTEX_M_ISPAC,
 	CORTEX_M_NOTPAC
-}
+};
 
 enum cortex_m_isrmasking_mode {
 	CORTEX_M_ISRMASK_AUTO,
